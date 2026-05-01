@@ -1,5 +1,5 @@
 import "./styles/global.css";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
 import { ROLES, STATUSES } from "./data/constants.js";
@@ -13,6 +13,16 @@ import { fmtDate } from "./utils/dateUtils.js";
 import {
 	detectConflicts,
 } from "./utils/eventUtils.js";
+import {
+	authAPI,
+	userAPI,
+	eventAPI,
+	venueAPI,
+	approvalAPI,
+	setAuthToken,
+	getAuthToken,
+	clearAuthToken,
+} from "./utils/api.js";
 
 // ─── COMPONENTS ───────────────────────────────────────────────────────────────
 import Icon from "./components/Icon.jsx";
@@ -38,7 +48,7 @@ import VenuesPage from "./pages/VenuesPage.jsx";
 export default function App() {
 	const [users, setUsers] = useState(initialUsers);
 	const [events, setEvents] = useState(initialEvents);
-	const [venues] = useState(initialVenues);
+	const [venues, setVenues] = useState(initialVenues);
 	const [notifications, setNotifications] = useState(initialNotifications);
 	const [currentUser, setCurrentUser] = useState(null);
 	const [page, setPage] = useState("login");
@@ -70,6 +80,51 @@ export default function App() {
 		dateTo: "",
 	});
 	const [notifOpen, setNotifOpen] = useState(false);
+	const [loading, setLoading] = useState(false);
+
+	// ── INITIALIZATION ──────────────────────────────────────────────────────────
+
+	useEffect(() => {
+		// Check if user is logged in
+		const token = getAuthToken();
+		if (token) {
+			setPage("app");
+		}
+	}, []);
+
+	// Fetch app data when user logs in
+	useEffect(() => {
+		if (page === "app" && currentUser) {
+			const fetchAppData = async () => {
+				setLoading(true);
+				try {
+					const [usersResp, eventsResp, venuesResp] = await Promise.allSettled([
+						userAPI.getAllUsers(),
+						eventAPI.getAllEvents(),
+						venueAPI.getAllVenues(),
+					]);
+
+					// Handle responses - fall back to initial data if API fails
+					if (usersResp.status === "fulfilled") {
+						setUsers(usersResp.value || initialUsers);
+					}
+					if (eventsResp.status === "fulfilled") {
+						setEvents(eventsResp.value || initialEvents);
+					}
+					if (venuesResp.status === "fulfilled") {
+						setVenues(venuesResp.value || initialVenues);
+					}
+				} catch (error) {
+					console.error("Error fetching app data:", error);
+					// Keep using initial data on error
+				} finally {
+					setLoading(false);
+				}
+			};
+
+			fetchAppData();
+		}
+	}, [page, currentUser]);
 
 	// ── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -108,48 +163,50 @@ export default function App() {
 
 	// ── AUTH ──────────────────────────────────────────────────────────────────────
 
-	const handleLogin = () => {
-		const u = users.find(
-			(u) => u.email === loginForm.email && u.password === loginForm.password,
-		);
-		if (!u) {
-			setLoginForm((f) => ({ ...f, error: "Invalid email or password." }));
-			return;
+	const handleLogin = async () => {
+		setLoginForm((f) => ({ ...f, error: "" }));
+		try {
+			const response = await authAPI.login(loginForm.email, loginForm.password);
+			if (response.token && response.user) {
+				setAuthToken(response.token);
+				setCurrentUser(response.user);
+				setPage("app");
+				setActiveNav("dashboard");
+				showToast(`Welcome back, ${response.user.name.split(" ")[0]}!`);
+			}
+		} catch (err) {
+			setLoginForm((f) => ({ ...f, error: err.message || "Login failed. Please try again." }));
 		}
-		setCurrentUser(u);
-		setPage("app");
-		setActiveNav("dashboard");
-		showToast(`Welcome back, ${u.name.split(" ")[0]}!`);
 	};
 
-	const handleRegister = () => {
+	const handleRegister = async () => {
+		setRegisterForm((f) => ({ ...f, error: "" }));
 		if (!registerForm.name || !registerForm.email || !registerForm.password) {
 			setRegisterForm((f) => ({ ...f, error: "All fields are required." }));
 			return;
 		}
-		if (users.find((u) => u.email === registerForm.email)) {
-			setRegisterForm((f) => ({ ...f, error: "Email already registered." }));
-			return;
+		try {
+			const response = await authAPI.register(
+				registerForm.name,
+				registerForm.email,
+				registerForm.password,
+				registerForm.department,
+				registerForm.role
+			);
+			if (response.token && response.user) {
+				setAuthToken(response.token);
+				setCurrentUser(response.user);
+				setPage("app");
+				setActiveNav("dashboard");
+				showToast("Account created! Welcome to ESMS.");
+			}
+		} catch (err) {
+			setRegisterForm((f) => ({ ...f, error: err.message || "Registration failed. Please try again." }));
 		}
-		const newUser = {
-			id: Date.now(),
-			...registerForm,
-			avatar: registerForm.name
-				.split(" ")
-				.map((w) => w[0])
-				.join("")
-				.slice(0, 2)
-				.toUpperCase(),
-			createdAt: fmtDate(new Date()),
-		};
-		setUsers((prev) => [...prev, newUser]);
-		setCurrentUser(newUser);
-		setPage("app");
-		setActiveNav("dashboard");
-		showToast("Account created! Welcome to ESMS.");
 	};
 
 	const handleLogout = () => {
+		clearAuthToken();
 		setCurrentUser(null);
 		setPage("login");
 		setLoginForm({ email: "", password: "", error: "" });
@@ -158,108 +215,128 @@ export default function App() {
 	// ── EVENTS ────────────────────────────────────────────────────────────────────
 
 	const handleSaveEvent = useCallback(
-		(data, editId = null) => {
+		async (data, editId = null) => {
 			const conflicts = detectConflicts(events, data, editId);
 			if (conflicts.length > 0) {
 				showToast(`Conflict detected with "${conflicts[0].title}"`, "error");
 				return false;
 			}
-			if (editId) {
-				setEvents((prev) =>
-					prev.map((e) => (e.id === editId ? { ...e, ...data } : e)),
-				);
-				showToast("Event updated successfully.");
-			} else {
-				const newEvent = {
-					id: Date.now(),
-					...data,
-					organizerId: currentUser.id,
-					status: STATUSES.PENDING,
-					createdAt: fmtDate(new Date()),
-					approvedBy: null,
-					approvalNote: "",
-					attendees: 0,
-				};
-				setEvents((prev) => [...prev, newEvent]);
-				users
-					.filter((u) => u.role === ROLES.ADMIN || u.role === ROLES.SUPER_ADMIN)
-					.forEach((admin) =>
-						addNotification(
-							admin.id,
-							"submission",
-							"New Event Submitted",
-							`"${data.title}" submitted for approval.`,
-							newEvent.id,
-						),
+
+			try {
+				if (editId) {
+					// Update existing event
+					const updated = await eventAPI.updateEvent(editId, {
+						...data,
+					});
+					setEvents((prev) =>
+						prev.map((e) => (e.id === editId ? updated : e)),
 					);
-				showToast("Event submitted for approval!");
+					showToast("Event updated successfully.");
+				} else {
+					// Create new event
+					const newEvent = await eventAPI.createEvent({
+						...data,
+						organizerId: currentUser.id,
+					});
+					setEvents((prev) => [...prev, newEvent]);
+					users
+						.filter((u) => u.role === ROLES.ADMIN || u.role === ROLES.SUPER_ADMIN)
+						.forEach((admin) =>
+							addNotification(
+								admin.id,
+								"submission",
+								"New Event Submitted",
+								`"${data.title}" submitted for approval.`,
+								newEvent.id,
+							),
+						);
+					showToast("Event submitted for approval!");
+				}
+				return true;
+			} catch (error) {
+				showToast(`Error saving event: ${error.message}`, "error");
+				return false;
 			}
-			return true;
 		},
 		[events, currentUser, users, addNotification, showToast],
 	);
 
 	const handleDeleteEvent = useCallback(
-		(id) => {
-			setEvents((prev) => prev.filter((e) => e.id !== id));
-			showToast("Event deleted.");
-			setModal(null);
+		async (id) => {
+			try {
+				await eventAPI.deleteEvent(id);
+				setEvents((prev) => prev.filter((e) => e.id !== id));
+				showToast("Event deleted.");
+				setModal(null);
+			} catch (error) {
+				showToast(`Error deleting event: ${error.message}`, "error");
+			}
 		},
 		[showToast],
 	);
 
 	const handleApprove = useCallback(
-		(id, note = "") => {
-			const ev = events.find((e) => e.id === id);
-			setEvents((prev) =>
-				prev.map((e) =>
-					e.id === id
-						? {
-								...e,
-								status: STATUSES.APPROVED,
-								approvedBy: currentUser.id,
-								approvalNote: note,
-							}
-						: e,
-				),
-			);
-			addNotification(
-				ev.organizerId,
-				"approval",
-				"Event Approved",
-				`"${ev.title}" has been approved.`,
-				id,
-			);
-			showToast("Event approved!");
-			setModal(null);
+		async (id, note = "") => {
+			try {
+				await approvalAPI.approveEvent(id, note);
+				const ev = events.find((e) => e.id === id);
+				setEvents((prev) =>
+					prev.map((e) =>
+						e.id === id
+							? {
+									...e,
+									status: STATUSES.APPROVED,
+									approvedBy: currentUser.id,
+									approvalNote: note,
+								}
+							: e,
+					),
+				);
+				addNotification(
+					ev.organizerId,
+					"approval",
+					"Event Approved",
+					`"${ev.title}" has been approved.`,
+					id,
+				);
+				showToast("Event approved!");
+				setModal(null);
+			} catch (error) {
+				showToast(`Error approving event: ${error.message}`, "error");
+			}
 		},
 		[events, currentUser, addNotification, showToast],
 	);
 
 	const handleReject = useCallback(
-		(id, note) => {
-			const ev = events.find((e) => e.id === id);
-			setEvents((prev) =>
-				prev.map((e) =>
-					e.id === id
-						? {
-								...e,
-								status: STATUSES.REJECTED,
-								approvedBy: currentUser.id,
-								approvalNote: note,
-							}
-						: e,
-				),
-			);
-			addNotification(
-				ev.organizerId,
-				"rejection",
-				"Event Rejected",
-				`"${ev.title}" was rejected: ${note}`,
-				id,
-			);
-			showToast("Event rejected.", "warning");
-			setModal(null);
+		async (id, note) => {
+			try {
+				await approvalAPI.rejectEvent(id, note);
+				const ev = events.find((e) => e.id === id);
+				setEvents((prev) =>
+					prev.map((e) =>
+						e.id === id
+							? {
+									...e,
+									status: STATUSES.REJECTED,
+									approvedBy: currentUser.id,
+									approvalNote: note,
+								}
+							: e,
+					),
+				);
+				addNotification(
+					ev.organizerId,
+					"rejection",
+					"Event Rejected",
+					`"${ev.title}" was rejected: ${note}`,
+					id,
+				);
+				showToast("Event rejected.", "warning");
+				setModal(null);
+			} catch (error) {
+				showToast(`Error rejecting event: ${error.message}`, "error");
+			}
 		},
 		[events, currentUser, addNotification, showToast],
 	);

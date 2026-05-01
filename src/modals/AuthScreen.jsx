@@ -36,7 +36,7 @@ function AuthScreen({
 			<div
 				style={{
 					display: "grid",
-					gridTemplateColumns: "1fr 1fr",
+					gridTemplateRows: "1fr 1fr",
 					gap: 40,
 					maxWidth: 900,
 					width: "100%",

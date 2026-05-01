@@ -64,8 +64,9 @@ function CalendarPage({ events, venues, calendarDate, setCalendarDate, calendarV
           {cells.map((cell, i) => {
             const dayEvents = getEventsForDay(cell.day, cell.current);
             const isToday = cell.current && `${year}-${String(month + 1).padStart(2, "0")}-${String(cell.day).padStart(2, "0")}` === todayStr;
+            const cellKey = `${year}-${month}-${cell.day}-${cell.current}`;
             return (
-              <div key={i} className={`cal-day${isToday ? " today" : ""}${!cell.current ? " other-month" : ""}`}>
+              <div key={cellKey} className={`cal-day${isToday ? " today" : ""}${!cell.current ? " other-month" : ""}`}>
                 <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? "#c084fc" : cell.current ? "#e2e8f0" : "#334155", marginBottom: 4 }}>{cell.day}</div>
                 {dayEvents.slice(0, 2).map((ev) => (
                   <div key={ev.id} onClick={() => setModal({ type: "viewEvent", event: ev })}

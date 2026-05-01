@@ -6,6 +6,15 @@ import { detectConflicts } from '../utils/eventUtils.js';
 import { fmt, fmtDate, addDays, fmtTime } from '../utils/dateUtils.js';
 import Icon from '../components/Icon.jsx';
 
+// ─── STABLE FIELD COMPONENT (defined outside to prevent remount) ──────────────
+const Field = ({ label, error, children }) => (
+  <div>
+    <label style={{ fontSize: 11, color: "#64748b", fontWeight: 600, display: "block", marginBottom: 6, letterSpacing: "0.05em" }}>{label}</label>
+    {children}
+    {error && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>{error}</div>}
+  </div>
+);
+
 function EventFormModal({ onClose, onSave, venues, events, currentUser, editData }) {
   const [form, setForm] = useState(
     editData
@@ -15,11 +24,17 @@ function EventFormModal({ onClose, onSave, venues, events, currentUser, editData
   const [conflicts, setConflicts] = useState([]);
   const [errors,    setErrors]    = useState({});
 
+  // ─── DEBUG: Mount tracker (for diagnosing remount issues) ────────────────────
+  useEffect(() => {
+    console.log("✓ EventFormModal mounted");
+    return () => console.log("✗ EventFormModal unmounted");
+  }, []);
+
   useEffect(() => {
     if (form.date && form.startTime && form.endTime && form.venueId) {
       setConflicts(detectConflicts(events, { ...form, venueId: parseInt(form.venueId) }, editData?.id));
     }
-  }, [form, form.date, form.startTime, form.endTime, form.venueId, events, editData]);
+  }, [form.date, form.startTime, form.endTime, form.venueId, events, editData]);
 
   const validate = () => {
     const e = {};
@@ -40,14 +55,6 @@ function EventFormModal({ onClose, onSave, venues, events, currentUser, editData
     );
     if (success) onClose();
   };
-
-  const Field = ({ label, error, children }) => (
-    <div>
-      <label style={{ fontSize: 11, color: "#64748b", fontWeight: 600, display: "block", marginBottom: 6, letterSpacing: "0.05em" }}>{label}</label>
-      {children}
-      {error && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>{error}</div>}
-    </div>
-  );
 
   return (
     <div className="modal">
