@@ -34,7 +34,7 @@ function EventFormModal({ onClose, onSave, venues, events, currentUser, editData
     if (form.date && form.startTime && form.endTime && form.venueId) {
       setConflicts(detectConflicts(events, { ...form, venueId: parseInt(form.venueId) }, editData?.id));
     }
-  }, [form.date, form.startTime, form.endTime, form.venueId, events, editData]);
+  }, [form,form.date, form.startTime, form.endTime, form.venueId, events, editData]);
 
   const validate = () => {
     const e = {};

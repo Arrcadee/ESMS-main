@@ -80,7 +80,7 @@ export default function App() {
 		dateTo: "",
 	});
 	const [notifOpen, setNotifOpen] = useState(false);
-	const [loading, setLoading] = useState(false);
+	const [, setLoading] = useState(false);
 
 	// ── INITIALIZATION ──────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ export default function App() {
 
 			fetchAppData();
 		}
-	}, [page, currentUser]);
+	}, [page, currentUser, setLoading]);
 
 	// ── HELPERS ──────────────────────────────────────────────────────────────────
 
