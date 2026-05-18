@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Event Scheduling Management System - Full-stack web application",
   "private": true,
-  "proxy": "http://localhost:5000",
+  "proxy": "https://backend-taupe-eight-78.vercel.app/",
   "dependencies": {
     "pg": "^8.20.0",
     "react": "^18.2.0",
